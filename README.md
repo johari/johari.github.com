@@ -23,6 +23,4 @@
                                ░░░░
 ```
 
-That's me..
-
-Okay, it doesn't actually *look* like me, That's just the best I can draw.
+That's me.. not.
