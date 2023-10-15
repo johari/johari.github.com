@@ -1,0 +1,156 @@
+.css-masonry div,
+.css-masonry p,
+.css-masonry img {
+    padding: 0;
+    margin: 0;
+    box-sizing: border-box;
+    -moz-box-sizing: border-box;
+    -webkit-box-sizing: border-box;
+}
+
+/* BODY CODE  
+ * ------------------ */
+body {
+    font-family: sans-serif;
+    margin: 10px;
+    background: #ddd;
+}
+
+/* MASONRY GRID 
+ * ------------------ */
+/* .css-masonry {
+    -webkit-column-count: 4;
+    -moz-column-count: 4;
+    column-count: 4;
+
+    -webkit-column-gap: 1em;
+    -moz-column-gap: 1em;
+    column-gap: 1em;
+
+    -moz-column-gap: 1.5em;
+    -webkit-column-gap: 1.5em;
+    column-gap: 1.5em;
+
+    margin: 1.5em;
+    padding: 0;
+    font-size: .85em;
+} */
+
+.css-masonry.css-nimasonry {
+    grid-template-columns: repeat(3, 1fr);
+}
+
+.css-masonry {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    grid-gap: 1.5em;
+    margin: 1.5em;
+    padding: 0;
+    font-size: .85em;
+}
+
+@media only screen and (max-width: 800px) {
+
+    .css-masonry,
+    .css-masonry.css-nimasonry {
+        grid-template-columns: repeat(1, 1fr);
+    }
+}
+
+
+/* ITEM 
+ * ------------------ */
+.item.nima {
+    background: white;
+}
+
+.item {
+    display: inline-block;
+    width: 100%;
+
+    font-family: 'Alata', sans-serif;
+    font-size: 1em;
+
+    background: #fff;
+    margin: 0 0 1em;
+    width: 100%;
+
+    -webkit-transition: 1s ease all;
+
+    border: 2px solid black;
+    border-radius: 6px;
+    overflow: hidden;
+    /* to affect the inner elements with the radius */
+}
+
+
+
+.item img {
+    max-width: 100%;
+    font-size: 0;
+    height: auto;
+    /* to be sure to don't have a spacing after the img due to the inline block function */
+}
+
+.item-number {
+    border: 2px solid black;
+    border-radius: 50%;
+    background: #fff;
+
+
+    font-size: 0.8em;
+    display: flex;
+    /* flex is for center verticaly and horizontaly the number */
+    align-items: center;
+    justify-content: center;
+    width: 50px;
+    height: 50px;
+    padding: 0 2px 2px 0;
+    /* I display right and bottom padding because of the font who is not center par default : delete if you change the font */
+
+    position: absolute;
+    margin: 5px;
+}
+
+.item .title {
+    border: 0px solid blue;
+    padding: 10px 10px 14px;
+}
+
+.french {
+    color: grey;
+    font-size: 0.8em;
+}
+
+/* 
+@media only screen and (max-width: 420px) {
+    .css-masonry {
+        -moz-column-count: 1;
+        -webkit-column-count: 1;
+        column-count: 1;
+    }
+}
+
+@media only screen and (min-width: 421px) and (max-width: 768px) {
+    .css-masonry {
+        -moz-column-count: 1;
+        -webkit-column-count: 1;
+        column-count: 1;
+    }
+}
+
+@media only screen and (min-width: 769px) and (max-width: 1000px) {
+    .css-masonry {
+        -moz-column-count: 1;
+        -webkit-column-count: 1;
+        column-count: 1;
+    }
+}
+
+@media only screen and (min-width: 1001px) {
+    .css-masonry {
+        -moz-column-count: 4;
+        -webkit-column-count: 4;
+        column-count: 4;
+    }
+} */
