@@ -56,7 +56,7 @@
       <img src="nima_johari.jpg" alt="Photo of Nima Johari" style="min-width: 100%" />
 
       <div class="title">
-        <p>Hi! This is Nima and you have graced my web page with your presence.</p>
+        <p>Hi! My name is Nima.</p>
 
         <br />
         <p>I'm a software engineer at . I work on local and cloud build systems.</p>
@@ -81,10 +81,6 @@
         <p>
           Other than that:
         <ul>
-          <li>
-            I secretly wish  rebranded “Numbers” to “Media” by adding formulas that manipulate image, audio and video
-            clips stored inside cells.
-          </li>
           <li>
             My legal last name is Joharizadeh and I prefer to drop the "-zadeh" suffix.
           </li>
@@ -112,53 +108,98 @@
       <img src="pirate.png" alt="Recalc or Die" style="min-width: 100%" />
 
       <div class="title">
+        <p><b>Build systems and calc engines</b></p>
+        <br />
         <p>
-          Back in grad school, I rediscovered the idea of “rich spreadsheets” (dating back to 1986 [1]).
-          Modern spreadsheet products (Excel and Google Sheets) are slowly adopting some of these ideas..
+          Back in grad school, I re-discovered the idea of “rich spreadsheets”—dating back to 1986.
+          Modern spreadsheets (Excel and Google Sheets) are slowly adopting some of these ideas..
           but I think there is room for a lot more.
         </p>
         <br />
         <p>
-          I prototyped a new spreadsheet system focusing on rich values inside cells, utilizing build system techniques to extend the range of tasks that can be tackled at an interactive rate using spreadsheets.
+          From an engineering perspective, there are commonalities between rich spreadsheets and my role as a cloud build system engineer.
         </p>
         <br />
         <p>
-          I have not been working on rich spreadsheets since I joined Apple,
-          and my work as an intern in Excel team was focused on <a
-            href="https://www.youtube.com/watch?v=UXAD6rvfR8o">"Gridlets"</a>.
-          However implementing a polished "rich spreadsheet system" is a problem very dear to my heart.
-        </p>
-
-        <br />
-        <p>
-          Engineering-wise, rich spreadsheets have overlaps with my work
-          as a cloud build system engineer.
-
-          Implementing a rich calc engine [2] made me
+          Implementing <a href="https://github.com/johari/minicell">a rich calc engine</a> made me
           appreciate how core underlying primitives of a build system intersect with ones of a calc engine [3].
+        </p>
 
-        <ol>
-          <li>Object-oriented spreadsheets: the analytic spreadsheet package (by Kurt W. Piersol published in <a
-              href="https://dl.acm.org/doi/abs/10.1145/28697.28737">OOPSLA'86</a>)</li>
-          <li><a href="https://github.com/johari/minicell">https://github.com/johari/minicell</a></li>
-          <li>Build Systems à la Carte (<a
-              href="https://www.microsoft.com/en-us/research/uploads/prod/2018/03/build-systems.pdf">ICFP'18</a>)</li>
-        </ol>
+        <p>
+          <ol>
+            <li>Object Oriented Spreadsheets: The Analytic Spreadsheet Package (by Kurt W. Piersol published in <a
+                href="https://dl.acm.org/doi/abs/10.1145/28697.28737">OOPSLA'86</a>)</li>
+            <li><a href="https://github.com/johari/minicell">https://github.com/johari/minicell</a></li>
+            <li>Build Systems à la Carte (<a
+                href="https://www.microsoft.com/en-us/research/uploads/prod/2018/03/build-systems.pdf">ICFP'18</a>)</li>
+          </ol>
         </p>
       </div>
     </div>
 
-  </div>
-
-  <h2>Programming</h2>
-  <div class="css-masonry css-nimasonry">
     <div class="item nima">
       <iframe width="100%" style="min-height:400px" src="https://www.youtube.com/embed/NZo4cGzcSK0" frameborder="0"
         allowfullscreen></iframe>
       <div class="title">
-        Minicell demo for Andy (11 minute video)
-        <p class="french">In which I demo an experimental spreadsheet system I prototyped in Elm+Haskell before joining
-          Microsoft Research (Excel team) as an intern in 2019</p>
+        <p><b>Rich values inside cells (11 minute video)</b></p>
+        <br />
+        <p>
+          Prior to my internship at Microsoft Research in 2019 I prototyped an experimental spreadsheet system
+          in Elm and Haskell. <a href="https://www.youtube.com/watch?v=NZo4cGzcSK0">Here</a> is the video demo of it.
+        </p>
+        <br />
+        <p>
+          <table border="1">
+            <tr>
+              <td>0:50</td>
+              <td>Motivating example</td>
+            </tr>
+            <tr>
+              <td>2:45</td>
+              <td>Code-free interaction model to pluck dynamic graphs out of spreadsheets</td>
+            </tr>
+            <tr>
+              <td>3:50</td>
+              <td>Calculating the shortest path</td>
+            </tr>
+            <tr>
+              <td>5:14</td>
+              <td>Minicell's graph primitives</td>
+            </tr>
+            <tr>
+              <td>6:05</td>
+              <td>Shapes</td>
+            </tr>
+            <tr>
+              <td>7:43</td>
+              <td>Combining shapes</td>
+            </tr>
+            <tr>
+              <td>8:24</td>
+              <td>Integers that flow in time</td>
+            </tr>
+            <tr>
+              <td>8:24</td>
+              <td>Arithmetic on integers that flow in time</td>
+            </tr>
+            <tr>
+              <td>9:08</td>
+              <td>Making a 5-frame animation</td>
+            </tr>
+          </table>
+        </p>
+        <br />
+        <p>
+          Implementing and architecting a polished "rich spreadsheet system" is still a very dear problem to my heart, but
+          I have not been working on rich spreadsheets since I joined Apple,
+          and my work as an intern in Excel team was focused on <a
+            href="https://www.youtube.com/watch?v=UXAD6rvfR8o">"Gridlets"</a>—a mechanism for reusing calculation and formatting between spreadsheets.
+        </p>
+        <br />
+        <p>
+          I secretly wish  rebranded “Numbers” to “Media Editor” by adding formulas that manipulate image, audio and video
+          clips stored inside cells.
+        </p>
       </div>
     </div>
   </div>
@@ -190,25 +231,9 @@
       <div class="title">
         Visualizing "dentistry!" preset on dexed (Yamaha DX7 emulator)
         <br /><br />
-        <p class="french">Demo of playing "Dentistry!" preset, along with its funky spectrogram</p>
+        <p class="french">Demo of me playing with "Dentistry!" preset and visualizing  its funky spectrogram</p>
         <br />
         <p class="french"><code>#dexed</code></p>
-      </div>
-    </div>
-
-    <div class="item nima">
-      <div
-        style="width: 100%; background-image: url('./dr-who-spectrogram.png'); display: block; height: 400px; background-size: 1300px; background-position: 80% 80%;">
-      </div>
-      <div class="title">
-        <a href="./dr-who-spectrogram.png">Dr. Who's opening theme Spectrogram</a>
-        <br /><br />
-        <p class="french">I created this using <a
-            href="https://developer.apple.com/documentation/accelerate/visualizing_sound_as_an_audio_spectrogram">Apple's
-            spectrogram sample code</a> while listening to <a href="https://www.youtube.com/watch?v=lCwTj5ZrKIE">this
-            recreation of Dr. Who's theme</a> by Luke
-          Million
-        </p>
       </div>
     </div>
   </div>
