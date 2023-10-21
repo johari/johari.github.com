@@ -1,3 +1,23 @@
+.difficulty-level {
+    display: inline-block;
+    height: 1.4em;
+    text-align: center;
+    border-radius: 5px; /* Adjust the radius as needed */
+    background-color: #2196F3; /* Change the background color */
+    color: #fff; /* Change the text color */
+    font-weight: bold;
+    border:  1px solid black;
+}
+.easy {
+    background-color: #4CAF50; /* Color for 'Easy' */
+}
+.medium {
+    background-color: #FFC107; /* Color for 'Medium' */
+}
+.hard {
+    background-color: #F44336; /* Color for 'Hard' */
+}
+
 .css-masonry div,
 .css-masonry p,
 .css-masonry img {
