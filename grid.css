@@ -18,6 +18,17 @@
     background-color: #F44336; /* Color for 'Hard' */
 }
 
+#awesome-bar {
+    border: 1px solid black;
+    padding: 5px;
+}
+
+#awesome-bar input {
+    width: 100%;
+    font-size: 2em;
+/*    border: 0;*/
+}
+
 .css-masonry div,
 .css-masonry p,
 .css-masonry img {
@@ -56,8 +67,16 @@ body {
     font-size: .85em;
 } */
 
+.css-masonry.css-fullsonry {
+    grid-template-columns: repeat(1, 1fr);
+}
+
 .css-masonry.css-nimasonry {
     grid-template-columns: repeat(3, 1fr);
+}
+
+.css-masonry#awesome-bar {
+    grid-template-columns: repeat(1, 1fr);
 }
 
 .css-masonry {
