@@ -12,6 +12,8 @@
     content="Nima's internet corner. Nima Johari (Farsi: نیما جوهری) is a hobbyist, computer programmer and a PhD student currently in Davis, CA." />
   <title>Nima Johari</title>
   <link rel="stylesheet" href="grid.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 
 <body>
@@ -19,11 +21,141 @@
   <script src="elm.js"></script>
   <script>
     var app = Elm.Main.init({ node: document.getElementById("elm-app") });
-    document.getElementById("search-input").focus();
+
+    var map, markers;
+    var selectionRect = null;
+    var programmaticMove = false;
+    var dragStart = null;
+    var dragRect = null;
+
+    // Defer map and focus until Elm has rendered the DOM
+    requestAnimationFrame(function() {
+      document.getElementById("search-input").focus();
+
+      map = L.map("map", { boxZoom: false }).setView([30, 0], 2);
+      setTimeout(function() { map.invalidateSize(); }, 100);
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+        maxZoom: 18
+      }).addTo(map);
+
+      markers = L.layerGroup().addTo(map);
+
+      map.on("moveend", function() {
+        if (programmaticMove) {
+          programmaticMove = false;
+          return;
+        }
+        if (selectionRect) return;
+        var b = map.getBounds();
+        app.ports.onBoundsSelect.send({
+          south: b.getSouth(),
+          west: b.getWest(),
+          north: b.getNorth(),
+          east: b.getEast()
+        });
+      });
+
+      map.on("mousedown", function(e) {
+        if (!e.originalEvent.shiftKey) {
+          if (selectionRect && !dragStart) { clearSelection(); }
+          return;
+        }
+        map.dragging.disable();
+        dragStart = e.latlng;
+        if (dragRect) { map.removeLayer(dragRect); dragRect = null; }
+      });
+
+      map.on("mousemove", function(e) {
+        if (!dragStart) return;
+        var bounds = L.latLngBounds(dragStart, e.latlng);
+        if (dragRect) {
+          dragRect.setBounds(bounds);
+        } else {
+          dragRect = L.rectangle(bounds, { color: "#3388ff", weight: 2, fillOpacity: 0.15 }).addTo(map);
+        }
+      });
+
+      map.on("mouseup", function(e) {
+        if (!dragStart) return;
+        map.dragging.enable();
+        var bounds = L.latLngBounds(dragStart, e.latlng);
+        dragStart = null;
+        if (dragRect) { map.removeLayer(dragRect); dragRect = null; }
+        if (selectionRect) { map.removeLayer(selectionRect); }
+        selectionRect = L.rectangle(bounds, { color: "#3388ff", weight: 2, fillOpacity: 0.1, dashArray: "6" }).addTo(map);
+        var b = bounds;
+        app.ports.onBoundsSelect.send({
+          south: b.getSouth(),
+          west: b.getWest(),
+          north: b.getNorth(),
+          east: b.getEast()
+        });
+      });
+
+    });
+
+    function addMarkerForLoc(loc) {
+      var icon;
+      if (loc.thumbnail) {
+        icon = L.divIcon({
+          className: "",
+          html: '<div style="width:48px;height:48px;border:2px solid #333;border-radius:4px;overflow:hidden;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,0.3)"><img src="' + loc.thumbnail + '" style="width:100%;height:100%;object-fit:cover" /></div>',
+          iconSize: [52, 52],
+          iconAnchor: [26, 26],
+          popupAnchor: [0, -26]
+        });
+      } else {
+        icon = L.divIcon({
+          className: "",
+          html: '<div style="width:32px;height:32px;border:2px solid #333;border-radius:4px;background:#6cf;box-shadow:0 1px 4px rgba(0,0,0,0.3)"></div>',
+          iconSize: [36, 36],
+          iconAnchor: [18, 18],
+          popupAnchor: [0, -18]
+        });
+      }
+      var marker = L.marker([loc.lat, loc.lng], { icon: icon }).bindPopup(loc.label);
+      marker.on("click", function() {
+        map.setView([loc.lat, loc.lng], 15);
+      });
+      markers.addLayer(marker);
+    }
+
+    function renderMarkers(locations) {
+      programmaticMove = true;
+      markers.clearLayers();
+      if (locations.length === 0) {
+        map.setView([30, 0], 2);
+        return;
+      }
+      var bounds = [];
+      locations.forEach(function(loc) {
+        addMarkerForLoc(loc);
+        bounds.push([loc.lat, loc.lng]);
+      });
+      if (bounds.length === 1) {
+        map.setView(bounds[0], 10);
+      } else {
+        map.fitBounds(bounds, { padding: [40, 40] });
+      }
+    }
+
+    function clearSelection() {
+      if (selectionRect) { map.removeLayer(selectionRect); selectionRect = null; }
+      app.ports.onBoundsSelect.send(null);
+    }
+
+    app.ports.updateMap.subscribe(function(locations) {
+      if (!map) return;
+      if (selectionRect) { map.removeLayer(selectionRect); selectionRect = null; }
+      renderMarkers(locations);
+    });
+
     app.ports.setInputValue.subscribe(function(value) {
       var el = document.getElementById("search-input");
       if (el) { el.value = value; el.focus(); }
     });
+
     document.addEventListener("keydown", function(e) {
       if ((e.metaKey || e.ctrlKey) && e.key === "z") {
         e.preventDefault();
@@ -32,6 +164,9 @@
       if (e.key === "Tab" && document.activeElement && document.activeElement.id === "search-input") {
         e.preventDefault();
         app.ports.onTab.send(null);
+      }
+      if (e.key === "Escape" && selectionRect) {
+        clearSelection();
       }
     });
   </script>

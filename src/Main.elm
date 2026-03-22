@@ -4,6 +4,8 @@ import Browser
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick, onInput)
+import Json.Decode as Decode
+import Json.Encode as Encode
 import Set exposing (Set)
 import String
 
@@ -17,6 +19,15 @@ port onTab : (() -> msg) -> Sub msg
 port onUndo : (() -> msg) -> Sub msg
 
 
+port onPinClick : (String -> msg) -> Sub msg
+
+
+port onBoundsSelect : (Encode.Value -> msg) -> Sub msg
+
+
+port updateMap : Encode.Value -> Cmd msg
+
+
 
 -- MAIN
 
@@ -24,7 +35,7 @@ port onUndo : (() -> msg) -> Sub msg
 main : Program () Model Msg
 main =
     Browser.element
-        { init = \_ -> ( init, Cmd.none )
+        { init = \_ -> ( init, syncMap "" )
         , update = update
         , view = view
         , subscriptions =
@@ -32,6 +43,8 @@ main =
                 Sub.batch
                     [ onUndo (\_ -> Undo)
                     , onTab (\_ -> TabComplete)
+                    , onPinClick PinClick
+                    , onBoundsSelect DecodeBounds
                     ]
         }
 
@@ -45,10 +58,19 @@ type ViewMode
     | TableView
 
 
+type alias Bounds =
+    { south : Float
+    , west : Float
+    , north : Float
+    , east : Float
+    }
+
+
 type alias AppState =
     { query : String
     , activatedVideos : Set String
     , viewMode : ViewMode
+    , mapBounds : Maybe Bounds
     }
 
 
@@ -64,6 +86,7 @@ initState =
     { query = ""
     , activatedVideos = Set.empty
     , viewMode = CardView
+    , mapBounds = Nothing
     }
 
 
@@ -78,6 +101,71 @@ init =
 pushHistory : Model -> Model
 pushHistory model =
     { model | history = model.current :: model.history }
+
+
+type alias MapMarker =
+    { lat : Float
+    , lng : Float
+    , label : String
+    , thumbnail : Maybe String
+    }
+
+
+collectMarkers : List Section -> List MapMarker
+collectMarkers sections =
+    List.concatMap
+        (\section ->
+            List.filterMap
+                (\item ->
+                    Maybe.map
+                        (\loc ->
+                            { lat = loc.lat
+                            , lng = loc.lng
+                            , label = loc.label
+                            , thumbnail = itemThumbnail item.content
+                            }
+                        )
+                        item.location
+                )
+                section.items
+        )
+        sections
+
+
+itemThumbnail : Content -> Maybe String
+itemThumbnail content =
+    case content of
+        YouTube videoId ->
+            Just ("https://img.youtube.com/vi/" ++ youtubeBaseId videoId ++ "/default.jpg")
+
+        _ ->
+            Nothing
+
+
+encodeMarkers : List MapMarker -> Encode.Value
+encodeMarkers markers =
+    Encode.list
+        (\m ->
+            Encode.object
+                ([ ( "lat", Encode.float m.lat )
+                 , ( "lng", Encode.float m.lng )
+                 , ( "label", Encode.string m.label )
+                 ]
+                    ++ (case m.thumbnail of
+                            Just url ->
+                                [ ( "thumbnail", Encode.string url ) ]
+
+                            Nothing ->
+                                []
+                       )
+                )
+        )
+        markers
+
+
+syncMap : String -> Cmd Msg
+syncMap query =
+    updateMap (encodeMarkers (collectMarkers (filterSections query Nothing allSections)))
 
 
 type Difficulty
@@ -95,6 +183,13 @@ type Content
     | LinkOnly { url : String, label : String }
 
 
+type alias Location =
+    { lat : Float
+    , lng : Float
+    , label : String
+    }
+
+
 type alias Item =
     { content : Content
     , title : String
@@ -102,6 +197,7 @@ type alias Item =
     , description : List (Html Msg)
     , tags : List String
     , isNima : Bool
+    , location : Maybe Location
     }
 
 
@@ -124,6 +220,28 @@ allTags =
         |> Set.toList
 
 
+allLocations : List String
+allLocations =
+    List.concatMap
+        (\section ->
+            List.filterMap
+                (\item -> Maybe.map .label item.location)
+                section.items
+        )
+        allSections
+        |> Set.fromList
+        |> Set.toList
+
+
+quoteIfNeeded : String -> String
+quoteIfNeeded s =
+    if String.contains " " s then
+        "\"" ++ s ++ "\""
+
+    else
+        s
+
+
 allCompletions : List String
 allCompletions =
     [ "difficulty:easy"
@@ -144,12 +262,45 @@ allCompletions =
     , "type:link"
     , "is:nima"
     ]
-        ++ List.map (\t -> "tag:" ++ t) allTags
+        ++ List.map (\t -> "tag:" ++ quoteIfNeeded t) allTags
+        ++ List.map (\l -> "location:" ++ quoteIfNeeded l) allLocations
+
+
+tokenize : String -> List String
+tokenize query =
+    tokenizeHelp (String.toList query) "" [] False
+
+
+tokenizeHelp : List Char -> String -> List String -> Bool -> List String
+tokenizeHelp chars current tokens inQuote =
+    case chars of
+        [] ->
+            if String.isEmpty current then
+                List.reverse tokens
+
+            else
+                List.reverse (current :: tokens)
+
+        '"' :: rest ->
+            tokenizeHelp rest (current ++ "\"") tokens (not inQuote)
+
+        ' ' :: rest ->
+            if inQuote then
+                tokenizeHelp rest (current ++ " ") tokens True
+
+            else if String.isEmpty current then
+                tokenizeHelp rest "" tokens False
+
+            else
+                tokenizeHelp rest "" (current :: tokens) False
+
+        c :: rest ->
+            tokenizeHelp rest (current ++ String.fromChar c) tokens inQuote
 
 
 lastToken : String -> String
 lastToken query =
-    case List.reverse (String.words query) of
+    case List.reverse (tokenize query) of
         tok :: _ ->
             tok
 
@@ -161,7 +312,7 @@ replaceLastToken : String -> String -> String
 replaceLastToken query completion =
     let
         tokens =
-            String.words query
+            tokenize query
 
         prefix =
             List.take (List.length tokens - 1) tokens
@@ -205,7 +356,7 @@ getCompletions query =
         []
 
     else
-        List.filter (\c -> String.startsWith tok c && c /= tok) allCompletions
+        List.filter (\c -> String.startsWith tok (String.toLower c) && String.toLower c /= tok) allCompletions
 
 
 
@@ -219,6 +370,9 @@ type Msg
     | CompleteToken String
     | Undo
     | TabComplete
+    | PinClick String
+    | DecodeBounds Encode.Value
+    | ClearBounds
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -237,7 +391,7 @@ update msg model =
                     else
                         pushHistory model
             in
-            ( { base | current = { state | query = q }, typing = True }, Cmd.none )
+            ( { base | current = { state | query = q }, typing = True }, syncMap q )
 
         ActivateVideo videoId ->
             let
@@ -275,13 +429,15 @@ update msg model =
                 newQuery =
                     replaceLastToken state.query completion ++ " "
             in
-            ( { pushed | current = { state | query = newQuery }, typing = False }, setInputValue newQuery )
+            ( { pushed | current = { state | query = newQuery }, typing = False }
+            , Cmd.batch [ setInputValue newQuery, syncMap newQuery ]
+            )
 
         Undo ->
             case model.history of
                 prev :: rest ->
                     ( { model | current = prev, history = rest, typing = False }
-                    , setInputValue prev.query
+                    , Cmd.batch [ setInputValue prev.query, syncMap prev.query ]
                     )
 
                 [] ->
@@ -304,7 +460,9 @@ update msg model =
                         newQuery =
                             replaceLastToken state.query single ++ " "
                     in
-                    ( { pushed | current = { state | query = newQuery }, typing = False }, setInputValue newQuery )
+                    ( { pushed | current = { state | query = newQuery }, typing = False }
+                    , Cmd.batch [ setInputValue newQuery, syncMap newQuery ]
+                    )
 
                 _ ->
                     let
@@ -322,10 +480,57 @@ update msg model =
                             newQuery =
                                 replaceLastToken state.query prefix
                         in
-                        ( { pushed | current = { state | query = newQuery }, typing = False }, setInputValue newQuery )
+                        ( { pushed | current = { state | query = newQuery }, typing = False }
+                        , Cmd.batch [ setInputValue newQuery, syncMap newQuery ]
+                        )
 
                     else
                         ( model, Cmd.none )
+
+        PinClick _ ->
+            ( model, Cmd.none )
+
+        DecodeBounds value ->
+            let
+                decoder =
+                    Decode.map4 Bounds
+                        (Decode.field "south" Decode.float)
+                        (Decode.field "west" Decode.float)
+                        (Decode.field "north" Decode.float)
+                        (Decode.field "east" Decode.float)
+            in
+            case Decode.decodeValue decoder value of
+                Ok bounds ->
+                    let
+                        pushed =
+                            pushHistory model
+                    in
+                    ( { pushed | current = { state | mapBounds = Just bounds }, typing = False }
+                    , Cmd.none
+                    )
+
+                Err _ ->
+                    -- null or invalid → clear bounds
+                    if state.mapBounds /= Nothing then
+                        let
+                            pushed =
+                                pushHistory model
+                        in
+                        ( { pushed | current = { state | mapBounds = Nothing }, typing = False }
+                        , Cmd.none
+                        )
+
+                    else
+                        ( model, Cmd.none )
+
+        ClearBounds ->
+            let
+                pushed =
+                    pushHistory model
+            in
+            ( { pushed | current = { state | mapBounds = Nothing }, typing = False }
+            , syncMap state.query
+            )
 
 
 
@@ -342,6 +547,7 @@ allSections =
               , description = []
               , tags = [ "cooking", "food", "persian", "fesenjoon" ]
               , isNima = False
+              , location = Just { lat = 29.5918, lng = 52.5837, label = "Shiraz, Iran" }
               }
             , { content = YouTube "4riphWzBpuA"
               , title = "Macaroni (Makaroni) Persian Style Spaghetti Recipe"
@@ -349,6 +555,7 @@ allSections =
               , description = []
               , tags = [ "cooking", "food", "persian", "macaroni", "pasta" ]
               , isNima = False
+              , location = Just { lat = 35.8120, lng = 51.4260, label = "Darband, Tehran" }
               }
             , { content = YouTube "K7xihvdDBxE"
               , title = "Double-onionized potatoe"
@@ -356,6 +563,7 @@ allSections =
               , description = []
               , tags = [ "cooking", "food", "persian", "potato" ]
               , isNima = False
+              , location = Just { lat = 31.3183, lng = 48.6706, label = "Ahvaz, Iran" }
               }
             ]
       }
@@ -367,6 +575,7 @@ allSections =
               , description = []
               , tags = [ "cooking", "food", "pasta", "chicken" ]
               , isNima = False
+              , location = Nothing
               }
             ]
       }
@@ -378,6 +587,7 @@ allSections =
               , description = []
               , tags = [ "cooking", "food", "soup", "lentil" ]
               , isNima = False
+              , location = Nothing
               }
             ]
       }
@@ -389,6 +599,7 @@ allSections =
               , description = []
               , tags = [ "music", "synth", "dexed", "dx7", "fm synthesis", "sound" ]
               , isNima = True
+              , location = Just { lat = 47.0451, lng = -122.8957, label = "Capitol Theater, Olympia" }
               }
             , { content = YouTube "5rZ2H2YGAgI"
               , title = "Visualizing \"dentistry!\" preset on dexed (Yamaha DX7 emulator)"
@@ -397,6 +608,7 @@ allSections =
                     [ text "Demo of me playing with \"Dentistry!\" preset and visualizing its funky spectrogram" ]
               , tags = [ "music", "synth", "dexed", "dx7", "fm synthesis", "spectrogram", "sound" ]
               , isNima = True
+              , location = Just { lat = 47.0477, lng = -122.9010, label = "Obsidian, Olympia" }
               }
             ]
       }
@@ -412,6 +624,7 @@ allSections =
                     ]
               , tags = [ "music", "synth", "pure data", "arpeggiator", "sound" ]
               , isNima = True
+              , location = Just { lat = 47.0387, lng = -122.8908, label = "Le Voyeur, Olympia" }
               }
             ]
       }
@@ -427,6 +640,7 @@ allSections =
                     ]
               , tags = [ "lifestyle", "art", "painting", "documentary", "irving norman", "sacramento" ]
               , isNima = False
+              , location = Just { lat = 38.5816, lng = -121.5090, label = "Crocker Art Museum, Sacramento" }
               }
             , { content = YouTube "s-CTkbHnpNQ"
               , title = "10 Bullets, #8: \"ALWAYS BE KNOLLING\". By Tom Sachs"
@@ -435,6 +649,7 @@ allSections =
                     [ text "Knoll /nōl/ vb. (1989 USA) to arrange like objects in parallel or 90 degree angles as a method of organization." ]
               , tags = [ "lifestyle", "organization", "tom sachs", "knolling" ]
               , isNima = False
+              , location = Nothing
               }
             , { content = YouTube "eoOUBETTyMI"
               , title = "Discipline of Do Easy by Gus Van Sant"
@@ -442,6 +657,7 @@ allSections =
               , description = []
               , tags = [ "lifestyle", "gus van sant" ]
               , isNima = False
+              , location = Nothing
               }
             ]
       }
@@ -453,6 +669,7 @@ allSections =
               , description = []
               , tags = [ "billiards", "pool", "dynamicland", "projection", "interactive" ]
               , isNima = False
+              , location = Just { lat = 35.6295, lng = 139.7745, label = "Odaiba, Tokyo" }
               }
             , { content = ImageContent "http://www.openpool.cc/wp-content/uploads/howitworks-new-700x602.png"
               , title = "Pool table and a projector"
@@ -460,6 +677,7 @@ allSections =
               , description = []
               , tags = [ "billiards", "pool", "projector" ]
               , isNima = False
+              , location = Nothing
               }
             , { content = ImageContent "https://i0.wp.com/projectionprobilliards.com/wp-content/uploads/2020/03/projector-top.png?resize=1024%2C576&ssl=1"
               , title = "Pool table and a projector"
@@ -467,6 +685,7 @@ allSections =
               , description = []
               , tags = [ "billiards", "pool", "projector" ]
               , isNima = False
+              , location = Nothing
               }
             , { content = ImageContent "https://projectionprobilliards.com/wp-content/uploads/2020/03/redtable-with-grid.jpg"
               , title = "Projection Pro Billiards"
@@ -474,6 +693,7 @@ allSections =
               , description = []
               , tags = [ "billiards", "pool", "projection" ]
               , isNima = False
+              , location = Nothing
               }
             , { content = Vimeo "https://player.vimeo.com/video/209591449?h=583a1f54a6&title=0&byline=0&portrait=0#t=7s"
               , title = "La Tabla"
@@ -481,6 +701,7 @@ allSections =
               , description = []
               , tags = [ "billiards", "pool", "la tabla", "interactive" ]
               , isNima = False
+              , location = Nothing
               }
             ]
       }
@@ -492,6 +713,7 @@ allSections =
               , description = []
               , tags = [ "music", "synth", "synthesizer", "miku", "japan", "instrument" ]
               , isNima = False
+              , location = Just { lat = 35.7023, lng = 139.7745, label = "Akihabara, Tokyo" }
               }
             , { content = YouTube "kHVTuAc1mI4"
               , title = "Music Synthesizer for Android (demo by Raph Levien)"
@@ -499,6 +721,7 @@ allSections =
               , description = []
               , tags = [ "music", "synth", "synthesizer", "android", "raph levien", "instrument" ]
               , isNima = False
+              , location = Nothing
               }
             , { content = YouTube "9eWouzXO7_M?si=hOuz0KZ1kG4Zj7EH&amp;start=74"
               , title = "Arp Odyssey 2800 playing a segment of Dr. Who's theme"
@@ -506,6 +729,7 @@ allSections =
               , description = []
               , tags = [ "music", "synth", "synthesizer", "arp odyssey", "dr who", "instrument" ]
               , isNima = False
+              , location = Nothing
               }
             , { content = YouTube "-XHJekCcxUw?si=umhYR19KZmeBHKb8&amp;start=40"
               , title = "Arp Odyssey playing a segment of Dr. Who's theme"
@@ -513,6 +737,7 @@ allSections =
               , description = []
               , tags = [ "music", "synth", "synthesizer", "arp odyssey", "dr who", "instrument" ]
               , isNima = False
+              , location = Nothing
               }
             , { content = YouTube "lCwTj5ZrKIE"
               , title = "Dr. Who's theme played on vintage synths"
@@ -520,6 +745,7 @@ allSections =
               , description = []
               , tags = [ "music", "synth", "synthesizer", "dr who", "vintage", "instrument" ]
               , isNima = False
+              , location = Nothing
               }
             , { content = BackgroundImage { url = "./dr-who-spectrogram.png", height = "400px", bgSize = "1300px", bgPosition = "80% 80%" }
               , title = "Dr. Who's opening theme Spectrogram"
@@ -533,6 +759,7 @@ allSections =
                     ]
               , tags = [ "music", "synth", "dr who", "spectrogram" ]
               , isNima = True
+              , location = Just { lat = 38.5441, lng = -121.7381, label = "Downtown Davis" }
               }
             , { content = Bandcamp { src = "https://bandcamp.com/EmbeddedPlayer/album=2598635858/size=large/bgcol=ffffff/linkcol=0687f5/tracklist=false/transparent=true/", linkUrl = "https://tonyharrismusic.bandcamp.com/album/peaceful-atmosphere", linkText = "Peaceful Atmosphere by Tony Harris" }
               , title = "Kalimba played by Tony Harris from Sacramento"
@@ -540,6 +767,7 @@ allSections =
               , description = []
               , tags = [ "music", "kalimba", "tony harris", "sacramento", "instrument" ]
               , isNima = True
+              , location = Just { lat = 38.5816, lng = -121.4944, label = "Sacramento" }
               }
             , { content = YouTube "ajM4vYCZMZk"
               , title = "Ennio Morricone - The Ecstasy of Gold (Theremin & Voice by Carolina Eyck)"
@@ -547,6 +775,7 @@ allSections =
               , description = []
               , tags = [ "music", "theremin", "ennio morricone", "carolina eyck", "instrument" ]
               , isNima = False
+              , location = Nothing
               }
             ]
       }
@@ -558,6 +787,7 @@ allSections =
               , description = []
               , tags = [ "music", "orchestral", "live", "danish symphony", "ennio morricone" ]
               , isNima = False
+              , location = Just { lat = 55.6736, lng = 12.5681, label = "Tivoli Gardens, Copenhagen" }
               }
             , { content = YouTube "jtGL2Tqfdws"
               , title = "Twin Peaks // The Danish National Symphony Orchestra (Live)"
@@ -565,6 +795,7 @@ allSections =
               , description = []
               , tags = [ "music", "orchestral", "live", "danish symphony", "twin peaks" ]
               , isNima = False
+              , location = Just { lat = 55.6797, lng = 12.5916, label = "Nyhavn, Copenhagen" }
               }
             , { content = YouTube "MjxsZa3Ylao?si=5hA1rHh5ryvJAyeB"
               , title = "Fantasia Apocalyptica"
@@ -572,6 +803,7 @@ allSections =
               , description = []
               , tags = [ "music", "orchestral", "fantasia apocalyptica", "knuth" ]
               , isNima = False
+              , location = Nothing
               }
             ]
       }
@@ -586,6 +818,7 @@ allSections =
                     ]
               , tags = [ "music", "behind the scenes", "teenage engineering", "op1", "synthesis" ]
               , isNima = False
+              , location = Just { lat = 59.3293, lng = 18.0686, label = "Stockholm, Sweden" }
               }
             , { content = YouTube "_gRD9k_impU"
               , title = "Jan Overduin Invites You to Knuth's \"Fantasia Apocalyptica\""
@@ -594,6 +827,7 @@ allSections =
                     [ text "I like the literal interpretations in this video" ]
               , tags = [ "music", "behind the scenes", "knuth", "fantasia apocalyptica", "organ" ]
               , isNima = False
+              , location = Nothing
               }
             , { content = YouTube "2ZpwbXDleDw"
               , title = "Recipe for Musique Concrete"
@@ -602,6 +836,7 @@ allSections =
                     [ text "I love the sauce pan sounds towards the end of the video" ]
               , tags = [ "music", "behind the scenes", "musique concrete", "synthesis" ]
               , isNima = False
+              , location = Nothing
               }
             , { content = YouTube "e-eqgr_gn4k"
               , title = "Angelo Badalamenti explains how he wrote Laura Palmer's Theme"
@@ -609,6 +844,7 @@ allSections =
               , description = []
               , tags = [ "music", "behind the scenes", "twin peaks", "angelo badalamenti", "laura palmer" ]
               , isNima = False
+              , location = Nothing
               }
             ]
       }
@@ -625,6 +861,7 @@ allSections =
                     ]
               , tags = [ "music", "live", "law and order", "performance" ]
               , isNima = False
+              , location = Nothing
               }
             ]
       }
@@ -636,6 +873,40 @@ allSections =
               , description = []
               , tags = [ "computers", "programming", "douglas adams", "hyperland", "hypertext" ]
               , isNima = False
+              , location = Nothing
+              }
+            , { content = YouTube "RfVZtPk46rI"
+              , title = "Git training promo (in Farsi)"
+              , difficulty = Just Easy
+              , description = []
+              , tags = [ "computers", "programming", "git", "farsi", "training" ]
+              , isNima = True
+              , location = Just { lat = 35.6997, lng = 51.3380, label = "Azadi Tower, Tehran" }
+              }
+            , { content = YouTube "xeVyOUWOuB4"
+              , title = "Automerge local-first attributed tree demo (realtime sync with CRDTs)"
+              , difficulty = Just Hard
+              , description = []
+              , tags = [ "computers", "programming", "automerge", "crdt", "local-first", "sync" ]
+              , isNima = True
+              , location = Just { lat = 52.2053, lng = 0.1218, label = "Cambridge, UK" }
+              }
+            , { content = YouTube "IvY4KcGaxms"
+              , title = "The purple box: Easy PDF bookmarks via highlighting"
+              , difficulty = Just Medium
+              , description = []
+              , tags = [ "computers", "programming", "pdf", "bookmarks" ]
+              , isNima = True
+              , location = Just { lat = 37.8590, lng = -122.4852, label = "Sausalito Houseboats" }
+              }
+            , { content = YouTube "NZo4cGzcSK0"
+              , title = "Rich Spreadsheets (Minicell demo for Andy)"
+              , difficulty = Just Medium
+              , description =
+                    [ text "0:50 Motivating example. 2:45 Code-free interaction model to pluck dynamic graphs out of spreadsheets. 3:50 Calculating the shortest path. 5:14 Minicell's graph primitives. 6:05 Shapes. 7:43 Combining shapes. 8:24 Integers that flow in time. Arithmetic on integers that flow in time. 9:08 Making a 5-frame animation." ]
+              , tags = [ "computers", "programming", "spreadsheet", "minicell", "graphs", "animation" ]
+              , isNima = True
+              , location = Just { lat = 47.6423, lng = -122.1391, label = "Building 36, Microsoft, Redmond" }
               }
             , { content = YouTube "YDvbDiJZpy0"
               , title = "Meet the inventor of electronic spreadsheets"
@@ -643,6 +914,7 @@ allSections =
               , description = []
               , tags = [ "computers", "programming", "spreadsheet", "visicalc" ]
               , isNima = False
+              , location = Nothing
               }
             , { content = YouTube "Ow9AtuIuMLw"
               , title = "Eval/Apply"
@@ -654,6 +926,7 @@ allSections =
                     ]
               , tags = [ "computers", "programming", "sicp", "eval", "apply", "lisp" ]
               , isNima = False
+              , location = Nothing
               }
             , { content = YouTube "STVdCJaG0bY"
               , title = "The Tech Model Railroad Club of MIT"
@@ -661,6 +934,19 @@ allSections =
               , description = []
               , tags = [ "computers", "programming", "mit", "hackers", "model railroad" ]
               , isNima = False
+              , location = Just { lat = 42.3601, lng = -71.0942, label = "MIT, Cambridge, MA" }
+              }
+            ]
+      }
+    , { name = "Nature"
+      , items =
+            [ { content = YouTube "S6c5g22YNEw"
+              , title = "Birds and Water sound. :)"
+              , difficulty = Nothing
+              , description = []
+              , tags = [ "nature", "birds", "water", "sound" ]
+              , isNima = True
+              , location = Just { lat = 38.5254, lng = -121.7628, label = "Putah Creek Riparian Reserve, Davis" }
               }
             ]
       }
@@ -678,37 +964,71 @@ type alias ParsedQuery =
     , contentType : Maybe String
     , isNima : Maybe Bool
     , tag : Maybe String
+    , location : Maybe String
     }
+
+
+stripQuotes : String -> String
+stripQuotes s =
+    if String.startsWith "\"" s && String.endsWith "\"" s then
+        String.slice 1 (String.length s - 1) s
+
+    else
+        s
+
+
+splitOperator : String -> Maybe ( String, String )
+splitOperator token =
+    case String.indexes ":" token of
+        i :: _ ->
+            let
+                key =
+                    String.left i token
+
+                val =
+                    stripQuotes (String.dropLeft (i + 1) token)
+            in
+            if String.isEmpty val then
+                Nothing
+
+            else
+                Just ( key, val )
+
+        [] ->
+            Nothing
 
 
 parseQuery : String -> ParsedQuery
 parseQuery query =
     let
         tokens =
-            String.words (String.toLower query)
+            tokenize (String.toLower query)
 
         fold token acc =
-            case String.split ":" token of
-                [ "difficulty", val ] ->
+            case splitOperator token of
+                Just ( "difficulty", val ) ->
                     { acc | difficulty = Just val }
 
-                [ "section", val ] ->
+                Just ( "section", val ) ->
                     { acc | section = Just val }
 
-                [ "type", val ] ->
+                Just ( "type", val ) ->
                     { acc | contentType = Just val }
 
-                [ "is", "nima" ] ->
-                    { acc | isNima = Just True }
-
-                [ "tag", val ] ->
+                Just ( "tag", val ) ->
                     { acc | tag = Just val }
+
+                Just ( "location", val ) ->
+                    { acc | location = Just val }
+
+                Just ( "is", "nima" ) ->
+                    { acc | isNima = Just True }
 
                 _ ->
                     { acc | freeText = acc.freeText ++ [ token ] }
     in
     List.foldl fold
-        { freeText = [], difficulty = Nothing, section = Nothing, contentType = Nothing, isNima = Nothing, tag = Nothing }
+        { freeText = [], difficulty = Nothing, section = Nothing, contentType = Nothing, isNima = Nothing, tag = Nothing, location = Nothing }
         tokens
 
 
@@ -792,8 +1112,21 @@ matchesItem pq item =
 
                 Just t ->
                     List.any (\tag -> String.contains t (String.toLower tag)) item.tags
+
+        locationMatch =
+            case pq.location of
+                Nothing ->
+                    True
+
+                Just l ->
+                    case item.location of
+                        Nothing ->
+                            False
+
+                        Just loc ->
+                            String.contains l (String.toLower loc.label)
     in
-    textMatch && diffMatch && typeMatch && nimaMatch && tagMatch
+    textMatch && diffMatch && typeMatch && nimaMatch && tagMatch && locationMatch
 
 
 matchesSection : ParsedQuery -> Section -> Bool
@@ -806,25 +1139,60 @@ matchesSection pq section =
             String.contains s (String.toLower section.name)
 
 
-filterSections : String -> List Section -> List Section
-filterSections query sections =
-    if String.isEmpty (String.trim query) then
+itemInBounds : Bounds -> Item -> Bool
+itemInBounds bounds item =
+    case item.location of
+        Nothing ->
+            False
+
+        Just loc ->
+            loc.lat >= bounds.south && loc.lat <= bounds.north && loc.lng >= bounds.west && loc.lng <= bounds.east
+
+
+filterSections : String -> Maybe Bounds -> List Section -> List Section
+filterSections query maybeBounds sections =
+    let
+        hasQuery =
+            not (String.isEmpty (String.trim query))
+
+        hasBounds =
+            maybeBounds /= Nothing
+
+        pq =
+            parseQuery query
+
+        filterItems section =
+            let
+                queryFiltered =
+                    if hasQuery then
+                        List.filter (matchesItem pq) section.items
+
+                    else
+                        section.items
+
+                boundsFiltered =
+                    case maybeBounds of
+                        Just bounds ->
+                            List.filter (itemInBounds bounds) queryFiltered
+
+                        Nothing ->
+                            queryFiltered
+            in
+            boundsFiltered
+    in
+    if not hasQuery && not hasBounds then
         sections
 
     else
-        let
-            pq =
-                parseQuery query
-        in
         List.filterMap
             (\section ->
-                if not (matchesSection pq section) then
+                if hasQuery && not (matchesSection pq section) then
                     Nothing
 
                 else
                     let
                         matchingItems =
-                            List.filter (matchesItem pq) section.items
+                            filterItems section
                     in
                     if List.isEmpty matchingItems then
                         Nothing
@@ -846,35 +1214,41 @@ view model =
             model.current
 
         filtered =
-            filterSections state.query allSections
+            filterSections state.query state.mapBounds allSections
 
         suggestions =
             [ "dr who"
             , "twin peaks"
             , "law and order"
             , "difficulty:easy"
-            , "difficulty:hard"
             , "section:orchestral"
             , "type:youtube synth"
             , "is:nima"
+            , "location:\"Davis, CA\""
+            , "tag:\"dr who\""
             ]
     in
     div []
         [ h1 [] [ text "Things that inspire me (", a [ href "./index.html" ] [ text "back to home" ], text ")" ]
-        , viewSearchBar state.query state.viewMode suggestions (getCompletions state.query)
-        , case state.viewMode of
-            CardView ->
-                div [] (List.map (viewSection state.activatedVideos) filtered)
+        , div [ style "display" "flex", style "gap" "1em", style "margin" "0 1.5em 1em 1.5em", style "align-items" "start" ]
+            [ div [ id "map", style "flex" "1", style "height" "calc(100vh - 120px)", style "position" "sticky", style "top" "10px", style "border" "2px solid black", style "border-radius" "6px" ] []
+            , div [ style "flex" "1", style "min-width" "0", style "overflow-y" "auto", style "max-height" "calc(100vh - 120px)" ]
+                [ viewSearchBar state.query state.viewMode state.mapBounds suggestions (getCompletions state.query)
+                , case state.viewMode of
+                    CardView ->
+                        div [] (List.map (viewSection state.activatedVideos) filtered)
 
-            TableView ->
-                viewTable filtered
-        , viewBackToHome
+                    TableView ->
+                        viewTable filtered
+                , viewBackToHome
+                ]
+            ]
         ]
 
 
-viewSearchBar : String -> ViewMode -> List String -> List String -> Html Msg
-viewSearchBar query viewMode suggestions completions =
-    div [ class "css-masonry", id "awesome-bar" ]
+viewSearchBar : String -> ViewMode -> Maybe Bounds -> List String -> List String -> Html Msg
+viewSearchBar query viewMode mapBounds suggestions completions =
+    div [ id "awesome-bar" ]
         [ div [ class "item" ]
             [ div [ style "display" "flex", style "align-items" "center", style "gap" "8px" ]
                 [ button
@@ -941,6 +1315,17 @@ viewSearchBar query viewMode suggestions completions =
 
               else
                 text ""
+            , button
+                [ onClick ClearBounds
+                , style "cursor" "pointer"
+                , style "border" "1px solid #999"
+                , style "border-radius" "4px"
+                , style "background" "#fff"
+                , style "padding" "4px 10px"
+                , style "font-size" "0.85em"
+                , style "margin-top" "6px"
+                ]
+                [ text "Reset zoom" ]
             ]
         ]
 
@@ -949,7 +1334,7 @@ viewSection : Set String -> Section -> Html Msg
 viewSection activatedVideos section =
     div []
         [ h2 [] [ text section.name ]
-        , div [ class "css-masonry" ]
+        , div [ class "css-masonry", style "grid-template-columns" "repeat(2, 1fr)" ]
             (List.map (viewItem activatedVideos) section.items)
         ]
 
@@ -985,7 +1370,7 @@ viewContent activatedVideos content =
                 iframe
                     [ width 100
                     , style "width" "100%"
-                    , style "min-height" "400px"
+                    , style "aspect-ratio" "16/9"
                     , src ("https://www.youtube.com/embed/" ++ videoId ++ (if String.contains "?" videoId then "&autoplay=1" else "?autoplay=1"))
                     , attribute "frameborder" "0"
                     , attribute "allowfullscreen" ""
@@ -997,7 +1382,7 @@ viewContent activatedVideos content =
                 div
                     [ style "position" "relative"
                     , style "cursor" "pointer"
-                    , style "min-height" "400px"
+                    , style "aspect-ratio" "16/9"
                     , style "background-image" ("url('https://img.youtube.com/vi/" ++ youtubeBaseId videoId ++ "/hqdefault.jpg')")
                     , style "background-size" "cover"
                     , style "background-position" "center"
